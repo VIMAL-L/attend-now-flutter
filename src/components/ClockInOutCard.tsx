@@ -3,6 +3,7 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import SlideToAction from './SlideToAction';
 import { useAttendance } from '@/contexts/AttendanceContext';
+import { MapPin } from 'lucide-react';
 
 export default function ClockInOutCard() {
   const { todayRecord, clockIn, clockOut, isClockedIn } = useAttendance();
@@ -27,6 +28,12 @@ export default function ClockInOutCard() {
     } else {
       clockIn();
     }
+  };
+
+  // Format location for display
+  const formatLocation = (location: { lat: number; lng: number } | null) => {
+    if (!location) return 'Not available';
+    return `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}`;
   };
 
   return (
@@ -66,12 +73,24 @@ export default function ClockInOutCard() {
             <div className="space-y-1">
               <p className="text-sm text-gray-500">Clock In</p>
               <p className="text-lg font-medium">{todayRecord.clockInTime}</p>
+              {todayRecord.clockInLocation && (
+                <div className="flex items-center text-xs text-gray-500 mt-1">
+                  <MapPin className="h-3 w-3 mr-1" />
+                  <span>{formatLocation(todayRecord.clockInLocation)}</span>
+                </div>
+              )}
             </div>
             
             {todayRecord.clockOutTime ? (
               <div className="space-y-1">
                 <p className="text-sm text-gray-500">Clock Out</p>
                 <p className="text-lg font-medium">{todayRecord.clockOutTime}</p>
+                {todayRecord.clockOutLocation && (
+                  <div className="flex items-center text-xs text-gray-500 mt-1">
+                    <MapPin className="h-3 w-3 mr-1" />
+                    <span>{formatLocation(todayRecord.clockOutLocation)}</span>
+                  </div>
+                )}
               </div>
             ) : null}
           </div>

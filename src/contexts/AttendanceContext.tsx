@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { toast } from "@/components/ui/use-toast";
 import { useAuth } from './AuthContext';
@@ -13,6 +12,8 @@ export interface AttendanceRecord {
   totalHours: number | null;
   status: 'present' | 'absent' | 'half-day' | null;
   location: string | null;
+  clockInLocation: { lat: number; lng: number } | null;
+  clockOutLocation: { lat: number; lng: number } | null;
 }
 
 interface AttendanceContextType {
@@ -38,7 +39,9 @@ const mockAttendanceData: AttendanceRecord[] = [
     clockOutTime: '17:15',
     totalHours: 8.75,
     status: 'present',
-    location: 'Office'
+    location: 'Office',
+    clockInLocation: { lat: 37.7749, lng: -122.4194 },
+    clockOutLocation: { lat: 37.7749, lng: -122.4194 }
   },
   {
     id: '2',
@@ -49,7 +52,9 @@ const mockAttendanceData: AttendanceRecord[] = [
     clockOutTime: '17:30',
     totalHours: 8.75,
     status: 'present',
-    location: 'Office'
+    location: 'Office',
+    clockInLocation: { lat: 37.7749, lng: -122.4194 },
+    clockOutLocation: { lat: 37.7749, lng: -122.4194 }
   },
   {
     id: '3',
@@ -60,7 +65,9 @@ const mockAttendanceData: AttendanceRecord[] = [
     clockOutTime: '14:00',
     totalHours: 5,
     status: 'half-day',
-    location: 'Office'
+    location: 'Office',
+    clockInLocation: { lat: 37.7749, lng: -122.4194 },
+    clockOutLocation: { lat: 37.7749, lng: -122.4194 }
   },
   {
     id: '4',
@@ -71,7 +78,9 @@ const mockAttendanceData: AttendanceRecord[] = [
     clockOutTime: '16:45',
     totalHours: 8.5,
     status: 'present',
-    location: 'Office'
+    location: 'Office',
+    clockInLocation: { lat: 37.7749, lng: -122.4194 },
+    clockOutLocation: { lat: 37.7749, lng: -122.4194 }
   },
   {
     id: '5',
@@ -82,7 +91,9 @@ const mockAttendanceData: AttendanceRecord[] = [
     clockOutTime: '17:00',
     totalHours: 9,
     status: 'present',
-    location: 'Office'
+    location: 'Office',
+    clockInLocation: { lat: 37.7749, lng: -122.4194 },
+    clockOutLocation: { lat: 37.7749, lng: -122.4194 }
   },
   {
     id: '6',
@@ -93,7 +104,9 @@ const mockAttendanceData: AttendanceRecord[] = [
     clockOutTime: null,
     totalHours: null,
     status: 'absent',
-    location: null
+    location: null,
+    clockInLocation: null,
+    clockOutLocation: null
   }
 ];
 
@@ -136,7 +149,9 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
           clockOutTime: null,
           totalHours: null,
           status: null,
-          location: null
+          location: null,
+          clockInLocation: null,
+          clockOutLocation: null
         });
         
         // Get attendance history for this user (excluding today)
@@ -158,63 +173,102 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
     }, 1000);
   };
 
-  const clockIn = () => {
-    if (!user) return;
-    
-    // Get current time in HH:MM format
-    const now = new Date();
-    const hours = now.getHours().toString().padStart(2, '0');
-    const minutes = now.getMinutes().toString().padStart(2, '0');
-    const currentTime = `${hours}:${minutes}`;
-    
-    // Update today's record
-    const updatedRecord: AttendanceRecord = {
-      ...(todayRecord as AttendanceRecord),
-      clockInTime: currentTime,
-      status: 'present',
-      location: 'Office' // In a real app this would come from location services
-    };
-    
-    setTodayRecord(updatedRecord);
-    
-    toast({ 
-      title: "Clocked In", 
-      description: `Successfully clocked in at ${currentTime}`
+  // Function to get current location
+  const getCurrentLocation = (): Promise<{ lat: number; lng: number }> => {
+    // In a real app, we would use the browser's geolocation API or a location library
+    return new Promise((resolve) => {
+      // Mock location data for demo purposes
+      // In a real app, this would come from navigator.geolocation.getCurrentPosition
+      setTimeout(() => {
+        // Using San Francisco coordinates as mock data
+        resolve({ lat: 37.7749, lng: -122.4194 });
+      }, 500);
     });
   };
 
-  const clockOut = () => {
+  const clockIn = async () => {
+    if (!user) return;
+    
+    try {
+      // Get current location
+      const location = await getCurrentLocation();
+      
+      // Get current time in HH:MM format
+      const now = new Date();
+      const hours = now.getHours().toString().padStart(2, '0');
+      const minutes = now.getMinutes().toString().padStart(2, '0');
+      const currentTime = `${hours}:${minutes}`;
+      
+      // Update today's record with location data
+      const updatedRecord: AttendanceRecord = {
+        ...(todayRecord as AttendanceRecord),
+        clockInTime: currentTime,
+        status: 'present',
+        location: 'Office', // In a real app this could be determined by geofencing
+        clockInLocation: location
+      };
+      
+      setTodayRecord(updatedRecord);
+      
+      toast({ 
+        title: "Clocked In", 
+        description: `Successfully clocked in at ${currentTime} with location tracking`
+      });
+    } catch (error) {
+      console.error('Error getting location', error);
+      toast({ 
+        variant: "destructive",
+        title: "Clock In Failed", 
+        description: "Could not access location. Please enable location services."
+      });
+    }
+  };
+
+  const clockOut = async () => {
     if (!user || !todayRecord) return;
     
-    // Get current time in HH:MM format
-    const now = new Date();
-    const hours = now.getHours().toString().padStart(2, '0');
-    const minutes = now.getMinutes().toString().padStart(2, '0');
-    const currentTime = `${hours}:${minutes}`;
-    
-    // Calculate total hours
-    const clockInParts = todayRecord.clockInTime?.split(':').map(Number) || [0, 0];
-    const clockOutParts = currentTime.split(':').map(Number);
-    
-    const clockInMinutes = clockInParts[0] * 60 + clockInParts[1];
-    const clockOutMinutes = clockOutParts[0] * 60 + clockOutParts[1];
-    const totalMinutes = clockOutMinutes - clockInMinutes;
-    const totalHours = Math.round((totalMinutes / 60) * 100) / 100;
-    
-    // Update today's record
-    const updatedRecord: AttendanceRecord = {
-      ...todayRecord,
-      clockOutTime: currentTime,
-      totalHours,
-      status: totalHours < 4 ? 'half-day' : 'present'
-    };
-    
-    setTodayRecord(updatedRecord);
-    
-    toast({ 
-      title: "Clocked Out", 
-      description: `Successfully clocked out at ${currentTime}. Total hours: ${totalHours.toFixed(2)}`
-    });
+    try {
+      // Get current location
+      const location = await getCurrentLocation();
+      
+      // Get current time in HH:MM format
+      const now = new Date();
+      const hours = now.getHours().toString().padStart(2, '0');
+      const minutes = now.getMinutes().toString().padStart(2, '0');
+      const currentTime = `${hours}:${minutes}`;
+      
+      // Calculate total hours
+      const clockInParts = todayRecord.clockInTime?.split(':').map(Number) || [0, 0];
+      const clockOutParts = currentTime.split(':').map(Number);
+      
+      const clockInMinutes = clockInParts[0] * 60 + clockInParts[1];
+      const clockOutMinutes = clockOutParts[0] * 60 + clockOutParts[1];
+      const totalMinutes = clockOutMinutes - clockInMinutes;
+      const totalHours = Math.round((totalMinutes / 60) * 100) / 100;
+      
+      // Update today's record with location data
+      const updatedRecord: AttendanceRecord = {
+        ...todayRecord,
+        clockOutTime: currentTime,
+        totalHours,
+        status: totalHours < 4 ? 'half-day' : 'present',
+        clockOutLocation: location
+      };
+      
+      setTodayRecord(updatedRecord);
+      
+      toast({ 
+        title: "Clocked Out", 
+        description: `Successfully clocked out at ${currentTime}. Total hours: ${totalHours.toFixed(2)}`
+      });
+    } catch (error) {
+      console.error('Error getting location', error);
+      toast({ 
+        variant: "destructive",
+        title: "Clock Out Failed", 
+        description: "Could not access location. Please enable location services."
+      });
+    }
   };
 
   return (
