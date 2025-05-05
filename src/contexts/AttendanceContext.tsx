@@ -1,6 +1,17 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { toast } from "@/components/ui/use-toast";
 import { useAuth } from './AuthContext';
+
+export interface Period {
+  id: number;
+  name: string;
+  startTime: string;
+  endTime: string;
+  location: { lat: number; lng: number };
+  locationName: string;
+  locationRadius: number; // in meters
+}
 
 export interface AttendanceRecord {
   id: string;
@@ -14,19 +25,105 @@ export interface AttendanceRecord {
   location: string | null;
   clockInLocation: { lat: number; lng: number } | null;
   clockOutLocation: { lat: number; lng: number } | null;
+  periodAttendance?: {
+    periodId: number;
+    time: string;
+    isPresent: boolean;
+    location: { lat: number; lng: number } | null;
+  }[];
 }
 
 interface AttendanceContextType {
   todayRecord: AttendanceRecord | null;
   attendanceHistory: AttendanceRecord[];
   allEmployeeRecords: AttendanceRecord[];
-  clockIn: () => void;
+  clockIn: (periodId?: number) => void;
   clockOut: () => void;
   isClockedIn: boolean;
   isLoading: boolean;
+  periods: Period[];
+  currentPeriod: Period | null;
+  getNextPeriod: () => Period | null;
+  checkLocationMatch: (userLocation: { lat: number; lng: number }, expectedLocation: { lat: number; lng: number }, radius: number) => boolean;
 }
 
 const AttendanceContext = createContext<AttendanceContextType | undefined>(undefined);
+
+// Mock periods for the day
+const mockPeriods: Period[] = [
+  { 
+    id: 1, 
+    name: '1st Period', 
+    startTime: '08:00', 
+    endTime: '08:50', 
+    location: { lat: 37.7749, lng: -122.4194 },
+    locationName: 'Main Building',
+    locationRadius: 100
+  },
+  { 
+    id: 2, 
+    name: '2nd Period', 
+    startTime: '09:00', 
+    endTime: '09:50', 
+    location: { lat: 37.7749, lng: -122.4194 },
+    locationName: 'Main Building',
+    locationRadius: 100
+  },
+  { 
+    id: 3, 
+    name: '3rd Period', 
+    startTime: '10:00', 
+    endTime: '10:50', 
+    location: { lat: 37.7749, lng: -122.4194 },
+    locationName: 'Science Lab',
+    locationRadius: 100
+  },
+  { 
+    id: 4, 
+    name: '4th Period', 
+    startTime: '11:00', 
+    endTime: '11:50', 
+    location: { lat: 37.7750, lng: -122.4195 },
+    locationName: 'Library',
+    locationRadius: 100
+  },
+  { 
+    id: 5, 
+    name: '5th Period', 
+    startTime: '13:00', 
+    endTime: '13:50', 
+    location: { lat: 37.7751, lng: -122.4196 },
+    locationName: 'Gym',
+    locationRadius: 100
+  },
+  { 
+    id: 6, 
+    name: '6th Period', 
+    startTime: '14:00', 
+    endTime: '14:50', 
+    location: { lat: 37.7749, lng: -122.4194 },
+    locationName: 'Computer Lab',
+    locationRadius: 100
+  },
+  { 
+    id: 7, 
+    name: '7th Period', 
+    startTime: '15:00', 
+    endTime: '15:50', 
+    location: { lat: 37.7749, lng: -122.4194 },
+    locationName: 'Art Room',
+    locationRadius: 100
+  },
+  { 
+    id: 8, 
+    name: '8th Period', 
+    startTime: '16:00', 
+    endTime: '16:50', 
+    location: { lat: 37.7749, lng: -122.4194 },
+    locationName: 'Main Building',
+    locationRadius: 100
+  }
+];
 
 // Mock data for attendance records
 const mockAttendanceData: AttendanceRecord[] = [
@@ -116,6 +213,7 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
   const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>([]);
   const [allEmployeeRecords, setAllEmployeeRecords] = useState<AttendanceRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [currentPeriod, setCurrentPeriod] = useState<Period | null>(null);
   
   const isClockedIn = todayRecord?.clockInTime && !todayRecord?.clockOutTime;
 
@@ -123,7 +221,69 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
     if (user) {
       loadAttendanceData();
     }
+
+    // Set up interval to check current period
+    const intervalId = setInterval(updateCurrentPeriod, 60000); // check every minute
+    updateCurrentPeriod(); // Initial check
+
+    return () => clearInterval(intervalId);
   }, [user]);
+
+  // Function to update the current period based on current time
+  const updateCurrentPeriod = () => {
+    const now = new Date();
+    const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    
+    const period = mockPeriods.find(p => {
+      return currentTime >= p.startTime && currentTime <= p.endTime;
+    });
+    
+    setCurrentPeriod(period || null);
+  };
+
+  // Function to get the next upcoming period
+  const getNextPeriod = (): Period | null => {
+    const now = new Date();
+    const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    
+    const nextPeriod = mockPeriods.find(p => p.startTime > currentTime);
+    return nextPeriod || null;
+  };
+
+  // Calculate distance between two points using Haversine formula
+  const calculateDistance = (
+    lat1: number, 
+    lon1: number, 
+    lat2: number, 
+    lon2: number
+  ): number => {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  // Check if user location matches expected location within radius
+  const checkLocationMatch = (
+    userLocation: { lat: number; lng: number },
+    expectedLocation: { lat: number; lng: number },
+    radius: number
+  ): boolean => {
+    const distance = calculateDistance(
+      userLocation.lat, 
+      userLocation.lng, 
+      expectedLocation.lat, 
+      expectedLocation.lng
+    );
+    return distance <= radius;
+  };
 
   const loadAttendanceData = () => {
     setIsLoading(true);
@@ -151,7 +311,8 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
           status: null,
           location: null,
           clockInLocation: null,
-          clockOutLocation: null
+          clockOutLocation: null,
+          periodAttendance: []
         });
         
         // Get attendance history for this user (excluding today)
@@ -186,7 +347,7 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
     });
   };
 
-  const clockIn = async () => {
+  const clockIn = async (periodId?: number) => {
     if (!user) return;
     
     try {
@@ -199,21 +360,100 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
       const minutes = now.getMinutes().toString().padStart(2, '0');
       const currentTime = `${hours}:${minutes}`;
       
-      // Update today's record with location data
-      const updatedRecord: AttendanceRecord = {
-        ...(todayRecord as AttendanceRecord),
-        clockInTime: currentTime,
-        status: 'present',
-        location: 'Office', // In a real app this could be determined by geofencing
-        clockInLocation: location
-      };
-      
-      setTodayRecord(updatedRecord);
-      
-      toast({ 
-        title: "Clocked In", 
-        description: `Successfully clocked in at ${currentTime} with location tracking`
-      });
+      // If this is for a specific period, verify location
+      if (periodId) {
+        const period = mockPeriods.find(p => p.id === periodId);
+        
+        if (!period) {
+          toast({
+            variant: "destructive",
+            title: "Period Not Found",
+            description: "Could not find the specified period."
+          });
+          return;
+        }
+        
+        // Check if the current time is within the period's time range
+        if (currentTime < period.startTime || currentTime > period.endTime) {
+          toast({
+            variant: "destructive",
+            title: "Outside Period Hours",
+            description: `You can only clock in during ${period.name} (${period.startTime} - ${period.endTime}).`
+          });
+          return;
+        }
+        
+        // Check if location matches
+        const locationMatches = checkLocationMatch(location, period.location, period.locationRadius);
+        
+        if (!locationMatches) {
+          toast({
+            variant: "destructive",
+            title: "Location Mismatch",
+            description: `You must be at ${period.locationName} to clock in for this period.`
+          });
+          return;
+        }
+        
+        // Update period attendance
+        const updatedRecord = { ...todayRecord } as AttendanceRecord;
+        
+        // Initialize periodAttendance if it doesn't exist
+        if (!updatedRecord.periodAttendance) {
+          updatedRecord.periodAttendance = [];
+        }
+        
+        // Check if already clocked in for this period
+        const existingPeriodAttendance = updatedRecord.periodAttendance.find(p => p.periodId === periodId);
+        
+        if (existingPeriodAttendance) {
+          toast({
+            variant: "destructive",
+            title: "Already Clocked In",
+            description: `You have already clocked in for ${period.name}.`
+          });
+          return;
+        }
+        
+        // Add attendance for this period
+        updatedRecord.periodAttendance.push({
+          periodId,
+          time: currentTime,
+          isPresent: true,
+          location
+        });
+        
+        // First period attendance also counts as clock in for the day
+        if (!updatedRecord.clockInTime) {
+          updatedRecord.clockInTime = currentTime;
+          updatedRecord.clockInLocation = location;
+          updatedRecord.status = 'present';
+          updatedRecord.location = period.locationName;
+        }
+        
+        setTodayRecord(updatedRecord);
+        
+        toast({ 
+          title: `${period.name} Attendance Marked`, 
+          description: `Successfully marked present for ${period.name} at ${currentTime}`
+        });
+      } else {
+        // Regular clock in (not period-specific)
+        const updatedRecord: AttendanceRecord = {
+          ...(todayRecord as AttendanceRecord),
+          clockInTime: currentTime,
+          status: 'present',
+          location: 'Office', // In a real app this could be determined by geofencing
+          clockInLocation: location
+        };
+        
+        setTodayRecord(updatedRecord);
+        
+        toast({ 
+          title: "Clocked In", 
+          description: `Successfully clocked in at ${currentTime} with location tracking`
+        });
+      }
     } catch (error) {
       console.error('Error getting location', error);
       toast({ 
@@ -279,7 +519,11 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
       clockIn, 
       clockOut, 
       isClockedIn,
-      isLoading
+      isLoading,
+      periods: mockPeriods,
+      currentPeriod,
+      getNextPeriod,
+      checkLocationMatch
     }}>
       {children}
     </AttendanceContext.Provider>
