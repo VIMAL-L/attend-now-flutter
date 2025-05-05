@@ -84,12 +84,12 @@ export default function ClockInOutCard() {
           </div>
         ) : null}
         
-        {todayRecord && (!todayRecord.clockInTime || !todayRecord.clockOutTime) && (
+        {!todayRecord?.clockOutTime && (
           <SlideToAction
             onComplete={handleSlideComplete}
             text={isClockedIn ? "Slide to Clock Out" : "Slide to Clock In"}
             completeText={isClockedIn ? "Clocked Out!" : "Clocked In!"}
-            disabled={todayRecord?.clockInTime && todayRecord?.clockOutTime}
+            disabled={false}
             className="mt-4"
           />
         )}
