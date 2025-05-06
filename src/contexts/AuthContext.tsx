@@ -1,7 +1,9 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from "@/components/ui/use-toast";
 import { supabase } from '@/lib/supabase';
+import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 
 export interface User {
   id: string;
@@ -28,36 +30,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const getSession = async () => {
-      const { data } = await supabase.auth.getSession();
-      if (data.session?.user) {
-        const userData = data.session.user;
-        setUser({
-          id: userData.id,
-          email: userData.email!,
-          name: userData.user_metadata?.name || userData.email!,
-          role: userData.user_metadata?.role || 'employee',
-        });
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('Error getting session:', error);
+          setIsLoading(false);
+          return;
+        }
+        
+        if (data.session?.user) {
+          const userData = data.session.user;
+          setUser({
+            id: userData.id,
+            email: userData.email!,
+            name: userData.user_metadata?.name || userData.email!,
+            role: userData.user_metadata?.role || 'employee',
+          });
+        }
+      } catch (error) {
+        console.error('Unexpected error during session check:', error);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
+    
     getSession();
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      const userData = session?.user;
-      if (userData) {
-        setUser({
-          id: userData.id,
-          email: userData.email!,
-          name: userData.user_metadata?.name || userData.email!,
-          role: userData.user_metadata?.role || 'employee',
-        });
-      } else {
-        setUser(null);
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (session?.user) {
+          const userData = session.user;
+          setUser({
+            id: userData.id,
+            email: userData.email!,
+            name: userData.user_metadata?.name || userData.email!,
+            role: userData.user_metadata?.role || 'employee',
+          });
+        } else {
+          setUser(null);
+        }
       }
-    });
+    );
 
     return () => {
-      listener?.subscription.unsubscribe();
+      authListener?.subscription.unsubscribe();
     };
   }, []);
 
@@ -118,10 +135,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    toast({ title: "Logged out", description: "You have been logged out successfully" });
-    navigate('/login');
+    try {
+      await supabase.auth.signOut();
+      setUser(null);
+      toast({ title: "Logged out", description: "You have been logged out successfully" });
+      navigate('/login');
+    } catch (error) {
+      toast({
+        variant: "destructive", 
+        title: "Logout failed", 
+        description: (error as Error).message
+      });
+    }
   };
 
   return (
