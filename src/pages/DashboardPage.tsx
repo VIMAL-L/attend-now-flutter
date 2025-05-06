@@ -1,4 +1,3 @@
-
 import React from 'react';
 import Layout from '@/components/Layout';
 import ClockInOutCard from '@/components/ClockInOutCard';
@@ -123,7 +122,7 @@ export default function DashboardPage() {
                       Generate Report
                     </Button>
                     
-                    <Button variant="outline">
+                    <Button >
                       Export CSV
                     </Button>
                   </div>

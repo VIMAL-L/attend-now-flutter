@@ -1,7 +1,7 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { toast } from "@/components/ui/use-toast";
 import { useNavigate } from 'react-router-dom';
+import { toast } from "@/components/ui/use-toast";
+import { supabase } from '@/lib/supabase';
 
 export interface User {
   id: string;
@@ -16,7 +16,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -27,52 +27,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check if user is stored in local storage
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
-    setIsLoading(false);
+    const getSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.user) {
+        const userData = data.session.user;
+        setUser({
+          id: userData.id,
+          email: userData.email!,
+          name: userData.user_metadata?.name || userData.email!,
+          role: userData.user_metadata?.role || 'employee',
+        });
+      }
+      setIsLoading(false);
+    };
+    getSession();
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      const userData = session?.user;
+      if (userData) {
+        setUser({
+          id: userData.id,
+          email: userData.email!,
+          name: userData.user_metadata?.name || userData.email!,
+          role: userData.user_metadata?.role || 'employee',
+        });
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => {
+      listener?.subscription.unsubscribe();
+    };
   }, []);
 
   const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
-      // Mock login for demo purposes
-      // In real app, this would be a call to Supabase
-      if (email === 'admin@example.com' && password === 'password') {
-        const adminUser = {
-          id: '1',
-          email: 'admin@example.com',
-          name: 'Admin User',
-          role: 'admin'
-        } as User;
-        
-        setUser(adminUser);
-        localStorage.setItem('user', JSON.stringify(adminUser));
-        toast({ title: "Login successful", description: "Welcome back, Admin!" });
-        navigate('/dashboard');
-      } else if (email === 'employee@example.com' && password === 'password') {
-        const employeeUser = {
-          id: '2',
-          email: 'employee@example.com',
-          name: 'John Employee',
-          role: 'employee'
-        } as User;
-        
-        setUser(employeeUser);
-        localStorage.setItem('user', JSON.stringify(employeeUser));
-        toast({ title: "Login successful", description: "Welcome back, John!" });
-        navigate('/dashboard');
-      } else {
-        throw new Error('Invalid email or password');
-      }
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+
+      const user = data.user;
+      setUser({
+        id: user.id,
+        email: user.email!,
+        name: user.user_metadata?.name || user.email!,
+        role: user.user_metadata?.role || 'employee',
+      });
+
+      toast({ title: "Login successful", description: `Welcome back, ${user.email}` });
+      navigate('/dashboard');
     } catch (error) {
-      console.error('Login failed:', error);
-      toast({ 
-        variant: "destructive", 
-        title: "Login failed", 
-        description: (error as Error).message 
+      toast({
+        variant: "destructive",
+        title: "Login failed",
+        description: (error as Error).message,
       });
     } finally {
       setIsLoading(false);
@@ -82,47 +91,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const register = async (name: string, email: string, password: string) => {
     setIsLoading(true);
     try {
-      // Mock register for demo purposes
-      // In real app, this would be a call to Supabase
-      const newUser = {
-        id: Math.random().toString(36).substr(2, 9),
+      const { error } = await supabase.auth.signUp({
         email,
-        name,
-        role: 'employee' as const
-      };
-      
-      setUser(newUser);
-      localStorage.setItem('user', JSON.stringify(newUser));
-      toast({ title: "Registration successful", description: "Welcome to Employee Attendance!" });
-      navigate('/dashboard');
+        password,
+        options: {
+          data: { name, role: 'employee' },
+        },
+      });
+      if (error) throw error;
+
+      toast({
+        title: "Registration successful",
+        description: "Please check your email to confirm your account before logging in.",
+      });
+
+      navigate('/login');
     } catch (error) {
-      console.error('Registration failed:', error);
-      toast({ 
-        variant: "destructive", 
-        title: "Registration failed", 
-        description: (error as Error).message 
+      toast({
+        variant: "destructive",
+        title: "Registration failed",
+        description: (error as Error).message,
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
-    localStorage.removeItem('user');
     toast({ title: "Logged out", description: "You have been logged out successfully" });
     navigate('/login');
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      isAuthenticated: !!user, 
-      isLoading,
-      login, 
-      register, 
-      logout 
-    }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated: !!user,
+        isLoading,
+        login,
+        register,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

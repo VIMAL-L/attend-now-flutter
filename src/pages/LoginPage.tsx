@@ -25,7 +25,7 @@ export default function LoginPage() {
           <div className="flex justify-center mb-2">
             <Calendar className="h-10 w-10 text-primary" />
           </div>
-          <CardTitle className="text-2xl font-bold">Employee Attendance</CardTitle>
+          <CardTitle className="text-2xl font-bold">Student Attendance</CardTitle>
           <CardDescription>
             Enter your email and password to log in
           </CardDescription>

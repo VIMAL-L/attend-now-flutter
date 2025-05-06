@@ -90,9 +90,9 @@ export default function ClockInOutCard() {
                 <p className="text-sm text-gray-500">Status</p>
                 <p className="text-lg font-semibold">
                   {isClockedIn ? (
-                    <span className="text-green-500">Working</span>
+                    <span className="text-green-500">present</span>
                   ) : todayRecord?.clockOutTime ? (
-                    <span className="text-blue-500">Day Complete</span>
+                    <span className="text-blue-500">Period Complete</span>
                   ) : (
                     <span className="text-gray-500">Not Clocked In</span>
                   )}
@@ -170,7 +170,7 @@ export default function ClockInOutCard() {
             
             {todayRecord?.totalHours ? (
               <div className="py-2 text-center bg-primary/10 rounded-lg">
-                <p className="text-sm text-gray-600">Total Hours Today</p>
+                <p className="text-sm text-gray-600">Total Hours present</p>
                 <p className="text-2xl font-bold text-primary">{todayRecord.totalHours.toFixed(2)}</p>
               </div>
             ) : null}
