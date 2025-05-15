@@ -1,7 +1,7 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { toast } from "@/components/ui/use-toast";
 import { useAuth } from './AuthContext';
+import { captureFromWebcam, compareFaces, isFaceMatched } from '@/utils/faceRecognition';
 
 export interface Period {
   id: number;
@@ -39,12 +39,14 @@ interface AttendanceContextType {
   allEmployeeRecords: AttendanceRecord[];
   clockIn: (periodId?: number) => void;
   clockOut: () => void;
+  markAttendanceWithFaceRecognition: (periodId?: number) => Promise<void>;
   isClockedIn: boolean;
   isLoading: boolean;
   periods: Period[];
   currentPeriod: Period | null;
   getNextPeriod: () => Period | null;
   checkLocationMatch: (userLocation: { lat: number; lng: number }, expectedLocation: { lat: number; lng: number }, radius: number) => boolean;
+  isProcessingAttendance: boolean;
 }
 
 const AttendanceContext = createContext<AttendanceContextType | undefined>(undefined);
@@ -207,6 +209,13 @@ const mockAttendanceData: AttendanceRecord[] = [
   }
 ];
 
+// Mock user face data
+const mockUserFaces: Record<string, string> = {
+  '1': 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAIBAQIBAQICAgICAgICAwUDAwMDAwYEBAMFBwYHBwcGBwcICQsJCAgKCAcHCg0KCgsMDAwMBwkODw0MDgsMDAz/2wBDAQICAgMDAwYDAwYMCAcIDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAz/wAARCAAyADIDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDvvD/7D3/BPzWP2fLm+m8A+CYfGDweZHcQeHrUPHd55M9n3j25TRXP+E/hn8GpvCuZP+EO8NLz/wAs9Eh/+N0V+OV83x9WpJxqSs3/ADM/ir6vmcm7Tb9Wfr7p3gjw5plrHBbaVYRQwxrHGgtYxtVQFUcL0AAH0FW/+EV0P/oF2P8A4Cx//E14J/w1x/z7H/vtv/iqP+GuP+fY/wDfbf8AxVfnyx+Mez9T5D61jNve+8+g/wDhFdD/AOgXY/8AgLH/APE0f8Irof8A0C7H/wABY/8A4mvn/wD4a4/59j/323/xVH/DXH/Psf8Avtv/AIqj+0MZ2D67jPP7z6A/4RXQ/wDoF2P/AICx/wDxNH/CK6H/ANAux/8AAWP/AOJr5/8A+GuP+fY/99t/8VR/w1x/z7H/AL7b/wCKo/tDGdg+u4zz+8+gP+EV0P8A6Bdj/wCAsf8A8TR/wiuh/wDQLsf/AAFj/wDia+f/APhrj/n2P/fbf/FVY0n9q5vtcf8AoqxPzEyfMb+8nt9BVRzDGPa4fXsZ5/efv5o//BJv9g17KNn+HXhqNmjUtmwhPJ+tFFenfD/RtLbwlYk6fZklYyc28Z5x/sFFFftuFxGKVGN6kvvZ5P8ArDjf+fkv/AmfMn/DrP8AY0/6Jz4d/wDAKD/4ij/h1n+xp/0Tnw7/AOAUH/xFFFc31zE/8/Jf+BS/zMf9YcZ/z+l/4Ez/2Q==',
+  '2': 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAIBAQIBAQICAgICAgICAwUDAwMDAwYEBAMFBwYHBwcGBwcICQsJCAgKCAcHCg0KCgsMDAwMBwkODw0MDgsMDAz/2wBDAQICAgMDAwYDAwYMCAcIDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAz/wAARCAAyADIDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDvvD/7D3/BPzWP2fLm+m8A+CYfGDweZHcQeHrUPHd55M9n3j25TRXP+E/hn8GpvCuZP+EO8NLz/wAs9Eh/+N0V+OV83x9WpJxqSs3/ADM/ir6vmcm7Tb9Wfr7p3gjw5plrHBbaVYRQwxrHGgtYxtVQFUcL0AAH0FW/+EV0P/oF2P8A4Cx//E14J/w1x/z7H/vtv/iqP+GuP+fY/wDfbf8AxVfnyx+Mez9T5D61jNve+8+g/wDhFdD/AOgXY/8AgLH/APE0f8Irof8A0C7H/wABY/8A4mvn/wD4a4/59j/323/xVH/DXH/Psf8Avtv/AIqj+0MZ2D67jPP7z6A/4RXQ/wDoF2P/AICx/wDxNH/CK6H/ANAux/8AAWP/AOJr5/8A+GuP+fY/99t/8VR/w1x/z7H/AL7b/wCKo/tDGdg+u4zz+8+gP+EV0P8A6Bdj/wCAsf8A8TR/wiuh/wDQLsf/AAFj/wDia+f/APhrj/n2P/fbf/FVY0n9q5vtcf8AoqxPzEyfMb+8nt9BVRzDGPa4fXsZ5/efv5o//BJv9g17KNn+HXhqNmjUtmwhPJ+tFFenfD/RtLbwlYk6fZklYyc28Z5x/sFFFftuFxGKVGN6kvvZ5P8ArDjf+fkv/AmfMn/DrP8AY0/6Jz4d/wDAKD/4ij/h1n+xp/0Tnw7/AOAUH/xFFFc31zE/8/Jf+BS/zMf9YcZ/z+l/4Ez/2Q==',
+  '3': 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAIBAQIBAQICAgICAgICAwUDAwMDAwYEBAMFBwYHBwcGBwcICQsJCAgKCAcHCg0KCgsMDAwMBwkODw0MDgsMDAz/2wBDAQICAgMDAwYDAwYMCAcIDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAz/wAARCAAyADIDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDvvD/7D3/BPzWP2fLm+m8A+CYfGDweZHcQeHrUPHd55M9n3j25TRXP+E/hn8GpvCuZP+EO8NLz/wAs9Eh/+N0V+OV83x9WpJxqSs3/ADM/ir6vmcm7Tb9Wfr7p3gjw5plrHBbaVYRQwxrHGgtYxtVQFUcL0AAH0FW/+EV0P/oF2P8A4Cx//E14J/w1x/z7H/vtv/iqP+GuP+fY/wDfbf8AxVfnyx+Mez9T5D61jNve+8+g/wDhFdD/AOgXY/8AgLH/APE0f8Irof8A0C7H/wABY/8A4mvn/wD4a4/59j/323/xVH/DXH/Psf8Avtv/AIqj+0MZ2D67jPP7z6A/4RXQ/wDoF2P/AICx/wDxNH/CK6H/ANAux/8AAWP/AOJr5/8A+GuP+fY/99t/8VR/w1x/z7H/AL7b/wCKo/tDGdg+u4zz+8+gP+EV0P8A6Bdj/wCAsf8A8TR/wiuh/wDQLsf/AAFj/wDia+f/APhrj/n2P/fbf/FVY0n9q5vtcf8AoqxPzEyfMb+8nt9BVRzDGPa4fXsZ5/efv5o//BJv9g17KNn+HXhqNmjUtmwhPJ+tFFenfD/RtLbwlYk6fZklYyc28Z5x/sFFFftuFxGKVGN6kvvZ5P8ArDjf+fkv/AmfMn/DrP8AY0/6Jz4d/wDAKD/4ij/h1n+xp/0Tnw7/AOAUH/xFFFc31zE/8/Jf+BS/zMf9YcZ/z+l/4Ez/2Q==',
+};
+
 export function AttendanceProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [todayRecord, setTodayRecord] = useState<AttendanceRecord | null>(null);
@@ -214,6 +223,7 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
   const [allEmployeeRecords, setAllEmployeeRecords] = useState<AttendanceRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [currentPeriod, setCurrentPeriod] = useState<Period | null>(null);
+  const [isProcessingAttendance, setIsProcessingAttendance] = useState(false);
   
   const isClockedIn = todayRecord?.clockInTime && !todayRecord?.clockOutTime;
 
@@ -335,15 +345,28 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
   };
 
   // Function to get current location
-  const getCurrentLocation = (): Promise<{ lat: number; lng: number }> => {
-    // In a real app, we would use the browser's geolocation API or a location library
-    return new Promise((resolve) => {
-      // Mock location data for demo purposes
-      // In a real app, this would come from navigator.geolocation.getCurrentPosition
-      setTimeout(() => {
-        // Using San Francisco coordinates as mock data
+  const getCurrentLocation = async (): Promise<{ lat: number; lng: number }> => {
+    return new Promise((resolve, reject) => {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            resolve({
+              lat: position.coords.latitude,
+              lng: position.coords.longitude
+            });
+          },
+          (error) => {
+            console.error('Error getting location', error);
+            // For demo purposes, use mock location
+            resolve({ lat: 37.7749, lng: -122.4194 });
+          },
+          { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        );
+      } else {
+        console.error('Geolocation not supported by this browser');
+        // For demo purposes, use mock location
         resolve({ lat: 37.7749, lng: -122.4194 });
-      }, 500);
+      }
     });
   };
 
@@ -511,6 +534,159 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
     }
   };
 
+  const markAttendanceWithFaceRecognition = async (periodId?: number) => {
+    if (!user) return;
+    
+    try {
+      setIsProcessingAttendance(true);
+      
+      // Step 1: Capture current face from webcam
+      toast({ title: "Capturing", description: "Please look at the camera..." });
+      const currentFaceImage = await captureFromWebcam();
+      
+      // Step 2: Get the stored face for this user
+      // In a real app, this would be fetched from a database
+      const storedFaceImage = mockUserFaces[user.id] || mockUserFaces['2']; // Default to a mock image
+      
+      if (!storedFaceImage) {
+        toast({ 
+          variant: "destructive",
+          title: "Face Recognition Error", 
+          description: "No stored face found for your profile. Please update your profile with a face image."
+        });
+        return;
+      }
+      
+      // Step 3: Compare the faces
+      toast({ title: "Processing", description: "Verifying your identity..." });
+      const similarityScore = await compareFaces(currentFaceImage, storedFaceImage);
+      const faceMatched = isFaceMatched(similarityScore);
+      
+      if (!faceMatched) {
+        toast({ 
+          variant: "destructive",
+          title: "Face Recognition Failed", 
+          description: "Your face could not be verified. Please try again with better lighting."
+        });
+        return;
+      }
+      
+      // Step 4: Get current location
+      toast({ title: "Verifying Location", description: "Checking your location..." });
+      const location = await getCurrentLocation();
+      
+      // Step 5: Get current time in HH:MM format
+      const now = new Date();
+      const hours = now.getHours().toString().padStart(2, '0');
+      const minutes = now.getMinutes().toString().padStart(2, '0');
+      const currentTime = `${hours}:${minutes}`;
+      
+      // If this is for a specific period, verify location
+      if (periodId) {
+        const period = mockPeriods.find(p => p.id === periodId);
+        
+        if (!period) {
+          toast({
+            variant: "destructive",
+            title: "Period Not Found",
+            description: "Could not find the specified period."
+          });
+          return;
+        }
+        
+        // Check if the current time is within the period's time range
+        if (currentTime < period.startTime || currentTime > period.endTime) {
+          toast({
+            variant: "destructive",
+            title: "Outside Period Hours",
+            description: `You can only mark attendance during ${period.name} (${period.startTime} - ${period.endTime}).`
+          });
+          return;
+        }
+        
+        // Check if location matches
+        const locationMatches = checkLocationMatch(location, period.location, period.locationRadius);
+        
+        if (!locationMatches) {
+          toast({
+            variant: "destructive",
+            title: "Location Mismatch",
+            description: `You must be at ${period.locationName} to mark attendance for this period.`
+          });
+          return;
+        }
+        
+        // Update period attendance
+        const updatedRecord = { ...todayRecord } as AttendanceRecord;
+        
+        // Initialize periodAttendance if it doesn't exist
+        if (!updatedRecord.periodAttendance) {
+          updatedRecord.periodAttendance = [];
+        }
+        
+        // Check if already clocked in for this period
+        const existingPeriodAttendance = updatedRecord.periodAttendance.find(p => p.periodId === periodId);
+        
+        if (existingPeriodAttendance) {
+          toast({
+            variant: "destructive",
+            title: "Already Marked",
+            description: `You have already marked attendance for ${period.name}.`
+          });
+          return;
+        }
+        
+        // Add attendance for this period
+        updatedRecord.periodAttendance.push({
+          periodId,
+          time: currentTime,
+          isPresent: true,
+          location
+        });
+        
+        // First period attendance also counts as clock in for the day
+        if (!updatedRecord.clockInTime) {
+          updatedRecord.clockInTime = currentTime;
+          updatedRecord.clockInLocation = location;
+          updatedRecord.status = 'present';
+          updatedRecord.location = period.locationName;
+        }
+        
+        setTodayRecord(updatedRecord);
+        
+        toast({ 
+          title: `${period.name} Attendance Marked`, 
+          description: `Successfully marked present for ${period.name} at ${currentTime}`
+        });
+      } else {
+        // Regular clock in (not period-specific)
+        const updatedRecord: AttendanceRecord = {
+          ...(todayRecord as AttendanceRecord),
+          clockInTime: currentTime,
+          status: 'present',
+          location: 'Office', // In a real app this could be determined by geofencing
+          clockInLocation: location
+        };
+        
+        setTodayRecord(updatedRecord);
+        
+        toast({ 
+          title: "Attendance Marked", 
+          description: `Successfully marked attendance at ${currentTime}`
+        });
+      }
+    } catch (error) {
+      console.error('Error during face recognition', error);
+      toast({ 
+        variant: "destructive",
+        title: "Attendance Marking Failed", 
+        description: "An error occurred while processing your request. Please try again."
+      });
+    } finally {
+      setIsProcessingAttendance(false);
+    }
+  };
+
   return (
     <AttendanceContext.Provider value={{ 
       todayRecord, 
@@ -518,12 +694,14 @@ export function AttendanceProvider({ children }: { children: React.ReactNode }) 
       allEmployeeRecords,
       clockIn, 
       clockOut, 
+      markAttendanceWithFaceRecognition,
       isClockedIn,
       isLoading,
       periods: mockPeriods,
       currentPeriod,
       getNextPeriod,
-      checkLocationMatch
+      checkLocationMatch,
+      isProcessingAttendance
     }}>
       {children}
     </AttendanceContext.Provider>

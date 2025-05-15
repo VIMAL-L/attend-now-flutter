@@ -3,9 +3,11 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import SlideToAction from './SlideToAction';
 import { useAttendance } from '@/contexts/AttendanceContext';
-import { MapPin, Clock } from 'lucide-react';
+import { MapPin, Clock, Camera } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { toast } from '@/components/ui/use-toast';
 
 export default function ClockInOutCard() {
   const { 
@@ -15,12 +17,15 @@ export default function ClockInOutCard() {
     isClockedIn, 
     periods, 
     currentPeriod,
-    getNextPeriod
+    getNextPeriod,
+    markAttendanceWithFaceRecognition,
+    isProcessingAttendance
   } = useAttendance();
   
   const [selectedPeriodId, setSelectedPeriodId] = useState<number | null>(
     currentPeriod ? currentPeriod.id : null
   );
+  const [showCamera, setShowCamera] = useState(false);
   
   // Get current time for display
   const now = new Date();
@@ -36,13 +41,32 @@ export default function ClockInOutCard() {
     day: 'numeric'
   });
   
-  const handleSlideComplete = () => {
+  const handleSlideComplete = async () => {
     if (isClockedIn) {
       clockOut();
     } else if (selectedPeriodId) {
-      clockIn(selectedPeriodId);
+      await markAttendanceWithFaceRecognition(selectedPeriodId);
     } else {
-      clockIn();
+      await markAttendanceWithFaceRecognition();
+    }
+  };
+
+  const handleAttendanceWithFace = async () => {
+    try {
+      setShowCamera(true);
+      if (selectedPeriodId) {
+        await markAttendanceWithFaceRecognition(selectedPeriodId);
+      } else {
+        await markAttendanceWithFaceRecognition();
+      }
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Face Recognition Failed",
+        description: "There was a problem with face recognition. Please try again."
+      });
+    } finally {
+      setShowCamera(false);
     }
   };
 
@@ -176,23 +200,45 @@ export default function ClockInOutCard() {
             ) : null}
             
             {currentPeriod && !isPeriodMarked(currentPeriod.id) && (
-              <SlideToAction
-                onComplete={handleSlideComplete}
-                text={`Slide to Mark ${currentPeriod.name}`}
-                completeText="Attendance Marked!"
-                disabled={false}
-                className="mt-4"
-              />
+              <div className="space-y-4">
+                <Button 
+                  variant="outline"
+                  className="w-full flex items-center justify-center gap-2"
+                  onClick={handleAttendanceWithFace}
+                  disabled={isProcessingAttendance}
+                >
+                  <Camera className="h-4 w-4" />
+                  <span>{isProcessingAttendance ? 'Processing...' : 'Mark Attendance with Face Recognition'}</span>
+                </Button>
+                
+                <SlideToAction
+                  onComplete={handleSlideComplete}
+                  text={`Slide to Mark ${currentPeriod.name}`}
+                  completeText="Attendance Marked!"
+                  disabled={isProcessingAttendance}
+                />
+              </div>
             )}
             
             {!currentPeriod && !todayRecord?.clockOutTime && (
-              <SlideToAction
-                onComplete={handleSlideComplete}
-                text={isClockedIn ? "Slide to Clock Out" : "Slide to Clock In"}
-                completeText={isClockedIn ? "Clocked Out!" : "Clocked In!"}
-                disabled={false}
-                className="mt-4"
-              />
+              <div className="space-y-4">
+                <Button 
+                  variant="outline"
+                  className="w-full flex items-center justify-center gap-2"
+                  onClick={handleAttendanceWithFace}
+                  disabled={isProcessingAttendance}
+                >
+                  <Camera className="h-4 w-4" />
+                  <span>{isProcessingAttendance ? 'Processing...' : 'Mark Attendance with Face Recognition'}</span>
+                </Button>
+                
+                <SlideToAction
+                  onComplete={handleSlideComplete}
+                  text={isClockedIn ? "Slide to Clock Out" : "Slide to Clock In"}
+                  completeText={isClockedIn ? "Clocked Out!" : "Clocked In!"}
+                  disabled={isProcessingAttendance}
+                />
+              </div>
             )}
           </TabsContent>
           
@@ -238,13 +284,24 @@ export default function ClockInOutCard() {
             </div>
             
             {currentPeriod && !isPeriodMarked(currentPeriod.id) && (
-              <SlideToAction
-                onComplete={handleSlideComplete}
-                text={`Mark Attendance for ${currentPeriod.name}`}
-                completeText="Attendance Marked!"
-                disabled={false}
-                className="mt-4"
-              />
+              <div className="space-y-4">
+                <Button 
+                  variant="outline"
+                  className="w-full flex items-center justify-center gap-2"
+                  onClick={handleAttendanceWithFace}
+                  disabled={isProcessingAttendance}
+                >
+                  <Camera className="h-4 w-4" />
+                  <span>{isProcessingAttendance ? 'Processing...' : 'Mark Attendance with Face Recognition'}</span>
+                </Button>
+                
+                <SlideToAction
+                  onComplete={handleSlideComplete}
+                  text={`Mark Attendance for ${currentPeriod.name}`}
+                  completeText="Attendance Marked!"
+                  disabled={isProcessingAttendance}
+                />
+              </div>
             )}
           </TabsContent>
         </Tabs>
